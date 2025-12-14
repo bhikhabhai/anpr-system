@@ -1,0 +1,16 @@
+fastapi
+uvicorn[standard]
+python-multipart
+
+numpy
+opencv-python
+onnxruntime
+Pillow
+scipy
+ffmpeg-python
+
+python-dotenv
+supabase
+
+sqlmodel
+psycopg2-binary
