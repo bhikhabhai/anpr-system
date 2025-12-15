@@ -39,3 +39,31 @@ class Plate(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     frame: Frame = Relationship(back_populates="plates")
+
+
+class Video(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    job_id: str = Field(unique=True, index=True)
+    filename: str
+    task: str  # "vehicle_detect" or "plate_recognize"
+    status: str  # upload_received, processing, completed, failed, etc.
+    
+    # Counters
+    vehicle_count: int = 0
+    plate_count: int = 0
+    total_frames: int = 0
+    
+    # URLs
+    input_video_url: Optional[str] = None
+    output_video_url: Optional[str] = None
+    
+    # Metadata
+    raw_meta: Optional[Dict[str, Any]] = Field(
+        default=None,
+        sa_column=Column(JSONB)
+    )
+    
+    # Timestamps
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    completed_at: Optional[datetime] = None

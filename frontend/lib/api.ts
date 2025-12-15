@@ -156,3 +156,102 @@ export async function getVideoStatus(jobId: string) {
   };
 }
 
+// History API functions
+export async function getFrames(limit: number = 50, offset: number = 0) {
+  if (!API_URL) {
+    throw new Error("Backend URL not configured");
+  }
+
+  const res = await fetch(
+    `${API_URL}/history/frames?limit=${limit}&offset=${offset}`,
+    { method: "GET" }
+  );
+
+  if (!res.ok) {
+    throw new Error("Failed to fetch frames");
+  }
+
+  return res.json();
+}
+
+export async function getFrameDetail(frameId: number) {
+  if (!API_URL) {
+    throw new Error("Backend URL not configured");
+  }
+
+  const res = await fetch(`${API_URL}/history/frames/${frameId}`, {
+    method: "GET",
+  });
+
+  if (!res.ok) {
+    throw new Error("Failed to fetch frame details");
+  }
+
+  return res.json();
+}
+
+export async function getPlates(limit: number = 100, offset: number = 0) {
+  if (!API_URL) {
+    throw new Error("Backend URL not configured");
+  }
+
+  const res = await fetch(
+    `${API_URL}/history/plates?limit=${limit}&offset=${offset}`,
+    { method: "GET" }
+  );
+
+  if (!res.ok) {
+    throw new Error("Failed to fetch plates");
+  }
+
+  return res.json();
+}
+
+export async function getStats() {
+  if (!API_URL) {
+    throw new Error("Backend URL not configured");
+  }
+
+  const res = await fetch(`${API_URL}/history/stats`, {
+    method: "GET",
+  });
+
+  if (!res.ok) {
+    throw new Error("Failed to fetch stats");
+  }
+
+  return res.json();
+}
+
+export async function getVideos(limit: number = 50, offset: number = 0) {
+  if (!API_URL) {
+    throw new Error("Backend URL not configured");
+  }
+
+  const res = await fetch(
+    `${API_URL}/history/videos?limit=${limit}&offset=${offset}`,
+    { method: "GET" }
+  );
+
+  if (!res.ok) {
+    throw new Error("Failed to fetch videos");
+  }
+
+  return res.json();
+}
+
+export async function getVideoDetail(videoId: number) {
+  if (!API_URL) {
+    throw new Error("Backend URL not configured");
+  }
+
+  const res = await fetch(`${API_URL}/history/videos/${videoId}`, {
+    method: "GET",
+  });
+
+  if (!res.ok) {
+    throw new Error("Failed to fetch video details");
+  }
+
+  return res.json();
+}

@@ -6,7 +6,7 @@ from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from sqlmodel import Session
 
 from app.services.inference import run_image_pipeline
-# from app.services.storage import upload_frame
+from app.services.storage import upload_frame
 from app.services.db import get_session
 from app.services.models import Frame, Plate
 

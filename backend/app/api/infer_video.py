@@ -56,24 +56,45 @@ async def infer_video(
 
 @router.get("/status/{job_id}")
 async def get_status(job_id: str):
-    res = (
-        supabase.table(JOB_TABLE)
-        .select("id,status,progress_percent,video_url,vehicle_count,plate_count")
-        .eq("id", job_id)
-        .single()
-        .execute()
-    )
-    if not res.data:
-        raise HTTPException(404)
+    max_retries = 3
+    initial_delay = 0.5
+    delay = initial_delay
+    
+    for attempt in range(max_retries):
+        try:
+            res = (
+                supabase.table(JOB_TABLE)
+                .select("id,status,progress_percent,video_url,vehicle_count,plate_count")
+                .eq("id", job_id)
+                .single()
+                .execute()
+            )
+            if not res.data:
+                raise HTTPException(404)
 
-    return {
-        "job_id": res.data["id"],
-        "status": res.data["status"],
-        "progress": res.data["progress_percent"],
-        "annotated_video_url": res.data["video_url"],
-        "vehicle_count": res.data.get("vehicle_count"),
-        "plate_count": res.data.get("plate_count"),
-    }
+            return {
+                "job_id": res.data["id"],
+                "status": res.data["status"],
+                "progress": res.data["progress_percent"],
+                "annotated_video_url": res.data["video_url"],
+                "vehicle_count": res.data.get("vehicle_count"),
+                "plate_count": res.data.get("plate_count"),
+            }
+        except Exception as e:
+            if attempt < max_retries - 1:
+                import time
+                import logging
+                logging.warning(f"Status query failed (attempt {attempt + 1}/{max_retries}): {str(e)}")
+                time.sleep(delay)
+                delay *= 2
+            else:
+                # Return 503 Service Unavailable on final failure
+                import logging
+                logging.error(f"Status query failed after {max_retries} attempts for job {job_id}: {str(e)}")
+                raise HTTPException(
+                    status_code=503,
+                    detail="Database temporarily unavailable. Please try again."
+                )
 
 @router.post("/cancel/{job_id}")
 async def cancel_job(job_id: str):

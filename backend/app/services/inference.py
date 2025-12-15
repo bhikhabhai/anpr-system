@@ -15,6 +15,7 @@ import uuid
 import shutil
 import concurrent.futures
 import json
+import time
 
 from app.core import supabase_client
 from app.core.config import settings
@@ -476,18 +477,60 @@ def phase_progress(phase: str, frame_pct: float = 0):
     return mapping.get(phase, 0)
 
 # ---------------- HELPERS ----------------
+def _retry_with_backoff(func, max_retries: int = 3, initial_delay: float = 0.5):
+    """
+    Retry a function with exponential backoff for transient connection failures.
+    Returns None if all retries fail, allowing graceful degradation.
+    """
+    delay = initial_delay
+    last_exception = None
+    
+    for attempt in range(max_retries):
+        try:
+            return func()
+        except Exception as e:
+            last_exception = e
+            # Log the error
+            logging.warning(f"Database operation failed (attempt {attempt + 1}/{max_retries}): {str(e)}")
+            
+            if attempt < max_retries - 1:
+                time.sleep(delay)
+                delay *= 2  # Exponential backoff
+            
+    # After all retries fail, log and return None
+    logging.error(f"Database operation failed after {max_retries} attempts: {str(last_exception)}")
+    return None
+
 def _is_cancelled(job_id: str) -> bool:
-    res = (
-        supabase.table(JOB_TABLE)
-        .select("cancelled")
-        .eq("id", job_id)
-        .single()
-        .execute()
-    )
-    return bool(res.data and res.data.get("cancelled"))
+    """
+    Check if video processing job is cancelled.
+    Returns False if database is unreachable (safe fallback to continue processing).
+    """
+    def query():
+        res = (
+            supabase.table(JOB_TABLE)
+            .select("cancelled")
+            .eq("id", job_id)
+            .single()
+            .execute()
+        )
+        return bool(res.data and res.data.get("cancelled"))
+    
+    result = _retry_with_backoff(query, max_retries=3, initial_delay=0.5)
+    return result if result is not None else False  # Safe fallback: assume not cancelled
 
 def _update(job_id: str, payload: dict):
-    supabase.table(JOB_TABLE).update(payload).eq("id", job_id).execute()
+    """
+    Update video job status in database.
+    If database is unreachable, logs error but doesn't crash the pipeline.
+    """
+    def update():
+        supabase.table(JOB_TABLE).update(payload).eq("id", job_id).execute()
+        return True
+    
+    result = _retry_with_backoff(update, max_retries=3, initial_delay=0.5)
+    if result is None:
+        logging.error(f"Failed to update job {job_id} after retries. Status update may be delayed.")
 
 def run_video_pipeline_and_store(
     *,
@@ -666,6 +709,33 @@ def run_video_pipeline_and_store(
         "processing_time_sec": elapsed,
     })
 
+    # Save to PostgreSQL for history tracking
+    try:
+        from app.services.db import get_session
+        from app.services.models import Video
+        
+        with get_session() as session:
+            video_record = Video(
+                job_id=job_id,
+                filename=f"video_{job_id}.mp4",
+                task=task,
+                status="completed",
+                vehicle_count=vehicle_count,
+                plate_count=plate_count,
+                total_frames=frame_idx,
+                output_video_url=video_url,
+                raw_meta={
+                    "processing_time_sec": elapsed,
+                    "downscale_width": downscale_width,
+                    "frame_skip": frame_skip,
+                },
+                completed_at=datetime.utcnow(),
+            )
+            session.add(video_record)
+            session.commit()
+    except Exception as e:
+        logger.warning("Failed to save video record to PostgreSQL: %s", e)
+
     return {
         "job_id": job_id,
         "video_url": video_url,
@@ -675,139 +745,3 @@ def run_video_pipeline_and_store(
         "processing_time_sec": elapsed,
     }
 
-
-
-def run_stream_pipeline(
-    stream_url: str,
-    task: str,
-    roi: Optional[Dict[str, int]] = None,
-    frame_skip: int = 1,
-    max_frames: Optional[int] = 300,
-    duration_sec: Optional[int] = 30,
-    preview_save: bool = True,
-) -> Dict[str, Any]:
-    """
-    Lightweight stream/RTSP pipeline.
-
-    - stream_url: RTSP/HTTP/0 for webcam (0 -> int(0))
-    - frame_skip: process every N-th frame
-    - max_frames: stop after this many processed frames (None -> unlimited)
-    - duration_sec: stop after this wall-clock seconds (None -> unlimited)
-    - preview_save: save a short annotated preview image to outputs for debugging
-
-    Returns:
-      {
-        "task": str,
-        "status": "completed" | "error",
-        "frames_seen": int,
-        "frames_processed": int,
-        "vehicle_detections": int,
-        "plate_detections": int,
-        "preview_path": str|None,
-        "error": str|None
-      }
-    """
-    import time
-
-    # allow numeric camera index
-    source = stream_url
-    try:
-        if isinstance(stream_url, str) and stream_url.isdigit():
-            source = int(stream_url)
-    except Exception:
-        source = stream_url
-
-    cap = cv2.VideoCapture(source)
-    if not cap.isOpened():
-        return {"task": task, "status": "error", "error": "Failed to open stream", "frames_seen": 0}
-
-    _update(job_id, {
-        "status": VIDEO_STATUS["PROCESSING"],
-        "progress_percent": 5,
-        "processed_frames": 0,
-    })
-
-    start_time = time.time()
-    frames_seen = 0
-    frames_processed = 0
-    total_vehicles = 0
-    total_plates = 0
-    sample_detections: List[Dict[str, Any]] = []
-
-    preview_img = None
-
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            # if intermittent failure, wait briefly then try again until timeout
-            if (time.time() - start_time) > (duration_sec or 30):
-                break
-            time.sleep(0.1)
-            continue
-
-        frames_seen += 1
-
-        # stop by duration
-        if duration_sec and (time.time() - start_time) > duration_sec:
-            break
-
-        # optional limit by processed frames
-        if max_frames and frames_processed >= max_frames:
-            break
-
-        if (frames_seen - 1) % frame_skip != 0:
-            continue
-
-        # apply ROI, detect
-        frame_for_infer = _apply_roi(frame, roi)
-        try:
-            vehicles = _yolo_vehicle_detections(
-                frame_for_infer,
-                session=vehicle_session,
-                img_size=IMG_SIZE,
-                conf_thres=CONF_THRES,
-                iou_thres=IOU_THRES,
-            )
-        except Exception as e:
-            # log and continue
-            logging.getLogger(__name__).exception("Stream inference error: %s", e)
-            vehicles = []
-
-        plates = []
-        if task == "plate_recognition":
-            plates = _dummy_plate_detections(frame_for_infer, vehicles, roi=roi)
-
-        total_vehicles += len(vehicles)
-        total_plates += len(plates)
-        frames_processed += 1
-
-        # collect a small sample of detections for immediate UI feedback (limit to 50)
-        if len(sample_detections) < 50:
-            for v in vehicles:
-                sample_detections.append({"frame": frames_seen, "bbox": v["bbox_vehicle"], "confidence": v["confidence"]})
-
-        # build preview image (first processed frame) for debugging if requested
-        if preview_save and preview_img is None:
-            try:
-                annotated = _draw_annotations(frame_for_infer, vehicles, plates, task)
-                preview_bytes = annotated  # PNG bytes returned by helper
-                preview_filename = f"stream_preview_{datetime.utcnow().strftime('%Y%m%d_%H%M%S%f')}.png"
-                preview_path = OUTPUT_DIR / preview_filename
-                with open(preview_path, "wb") as fh:
-                    fh.write(preview_bytes)
-                preview_img = str(preview_path)
-            except Exception:
-                preview_img = None
-
-    cap.release()
-
-    return {
-        "task": task,
-        "status": "completed",
-        "frames_seen": frames_seen,
-        "frames_processed": frames_processed,
-        "vehicle_detections": total_vehicles,
-        "plate_detections": total_plates,
-        "sample_detections": sample_detections,
-        "preview_path": preview_img,
-    }

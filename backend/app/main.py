@@ -7,7 +7,7 @@ from app.services.db import init_db, get_session
 from app.services.models import Frame
 from app.api.infer_image import router as image_router
 from app.api.infer_video import router as video_router
-from app.api.infer_stream import router as stream_router
+from app.api.history import router as history_router
 
 app = FastAPI(title="ANPR Backend")
 
@@ -39,4 +39,4 @@ app.add_middleware(
 
 app.include_router(image_router)
 app.include_router(video_router)
-app.include_router(stream_router)
+app.include_router(history_router)

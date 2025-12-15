@@ -24,10 +24,10 @@ export default function RootLayout({
             </div>
             <nav className="flex-1 px-3 py-4 space-y-1 text-sm">
               <Link
-                href="/dashboard"
+                href="/"
                 className="block px-3 py-2 rounded-md hover:bg-slate-800"
               >
-                Dashboard
+                Home
               </Link>
               <div className="mt-4 text-xs font-semibold text-slate-500 uppercase">
                 Workspaces
@@ -43,12 +43,6 @@ export default function RootLayout({
                 className="block px-3 py-2 rounded-md hover:bg-slate-800"
               >
                 Video
-              </Link>
-              <Link
-                href="/workspace/stream"
-                className="block px-3 py-2 rounded-md hover:bg-slate-800"
-              >
-                Stream
               </Link>
 
               <div className="mt-4 text-xs font-semibold text-slate-500 uppercase">

@@ -241,7 +241,7 @@ export default function VideoWorkspacePage() {
                                 ) : (
                                     <video
                                         controls
-                                        src={fileUrl.current || ""}
+                                        src={fileUrl.current || undefined}
                                         className="w-full h-full object-contain"
                                     />
                                 )}
