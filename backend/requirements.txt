@@ -1,16 +1,11 @@
-fastapi
-uvicorn[standard]
-python-multipart
+fastapi                  # API framework
+uvicorn[standard]        # ASGI server (prod-ready)
+python-multipart         # file uploads (forms/videos)
 
-numpy
-opencv-python
-onnxruntime
-Pillow
-scipy
-ffmpeg-python
+numpy                    # numeric ops (OpenCV / ONNX dependency)
+opencv-python            # image/video processing
+onnxruntime              # model inference
 
-python-dotenv
-supabase
-
-sqlmodel
-psycopg2-binary
+supabase                 # DB + storage client
+sqlmodel                 # ORM / DB models
+psycopg2-binary          # Postgres driver

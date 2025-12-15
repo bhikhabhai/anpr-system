@@ -78,8 +78,6 @@ logger = logging.getLogger(__name__)
 # ----------------- PATHS -----------------
 BASE_DIR = Path(__file__).resolve().parents[2]
 MODELS_DIR = BASE_DIR / "models"
-OUTPUT_DIR = BASE_DIR / "outputs"
-OUTPUT_DIR.mkdir(exist_ok=True)
 
 # adjust filename if your ONNX file is named differently
 VEHICLE_MODEL_PATH = MODELS_DIR / "vehicle_detector.onnx"
@@ -316,18 +314,12 @@ def run_image_pipeline(
         raise ValueError("Failed to encode annotated image")
     annotated_bytes = buf.tobytes()
 
-    filename = f"{task}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S%f')}.png"
-    output_path = OUTPUT_DIR / filename
-    with open(output_path, "wb") as f:
-        f.write(annotated_bytes)
-
     return {
         "task": task,
         "image_bytes_annotated": annotated_bytes,
         "vehicle_count": len(vehicles),
         "plates": plates,
         "raw_meta": {"vehicles": vehicles, "roi": roi},
-        "local_path": str(output_path),
         "plate_count": len(plates),
     }
 
@@ -562,11 +554,14 @@ def run_video_pipeline_and_store(
     scale = min(1.0, downscale_width / w)
     tw, th = int(w * scale), int(h * scale)
 
-    out_dir = OUTPUT_DIR / "videos"
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    raw_out = out_dir / f"{job_id}_raw.mp4"
-    final_out = out_dir / f"{job_id}.mp4"
+    # Use temporary files instead of persistent local output
+    raw_out = tempfile.NamedTemporaryFile(delete=False, suffix="_raw.mp4")
+    raw_out.close()
+    raw_out = Path(raw_out.name)
+    
+    final_out = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+    final_out.close()
+    final_out = Path(final_out.name)
 
     writer, codec = _attempt_video_writer(raw_out, fps, (tw, th))
 
@@ -687,6 +682,15 @@ def run_video_pipeline_and_store(
     except Exception as e:
         upload_error = str(e)
         logger.exception("Upload failed job_id=%s", job_id)
+    finally:
+        # Clean up temporary video files
+        try:
+            if raw_out.exists():
+                raw_out.unlink()
+            if final_out.exists():
+                final_out.unlink()
+        except Exception as e:
+            logger.warning("Failed to clean up temp video files: %s", e)
 
     # ----------------- FINALIZE (ONE PATH ONLY) -----------------
     if not video_url:
