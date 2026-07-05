@@ -357,12 +357,6 @@ Tests are not yet implemented. TODO:
 
 ---
 
-## 📄 License
-
-[Specify your license here, e.g., MIT, Apache 2.0, etc.]
-
----
-
 ## 📧 Support & Questions
 
 For issues, questions, or feature requests, please open an issue on GitHub or contact the development team.
